@@ -40,9 +40,13 @@ new email claiming a name already registered in that office is refused.
 1. **Supabase**: create a project. Open SQL Editor, paste `supabase/schema.sql`,
    Run. Copy from Project Settings > API: the Project URL and the
    `service_role` key.
-2. **Resend**: create an account, add and verify your sending domain
-   (two DNS records), create an API key. Until then, leave `RESEND_API_KEY`
-   empty and emails are printed to the server log instead of sent.
+2. **Email**, one of:
+   - Gmail: on the front-desk Google account turn on 2-step verification,
+     create an App Password (myaccount.google.com/apppasswords), set
+     `GMAIL_USER` and `GMAIL_APP_PASSWORD`. Emails come from that address.
+   - Resend: add and verify your sending domain (two DNS records), create an
+     API key, set `RESEND_API_KEY` and `EMAIL_FROM`.
+   With neither set, emails are printed to the server log instead of sent.
 3. **Vercel**: import this repo. Add the environment variables from
    `.env.example`. Deploy. The cron in `vercel.json` runs daily on the Hobby
    plan; on Pro change it to `*/15 * * * *`.

@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
 interface Mail {
   to: string | string[];
@@ -7,24 +8,55 @@ interface Mail {
   replyTo?: string;
 }
 
-// Sends through Resend when RESEND_API_KEY is set; otherwise logs to the
-// server console so the app still works in development.
+// Transport is chosen from the environment, in this order:
+//   1. Gmail SMTP  (GMAIL_USER + GMAIL_APP_PASSWORD): sends from that Gmail
+//      address, e.g. the front desk mailbox. Needs 2-step verification and an
+//      app password on the Google account. Free Gmail caps at ~500 recipients
+//      a day, which is plenty for one meeting room.
+//   2. Resend      (RESEND_API_KEY + EMAIL_FROM on a verified domain).
+//   3. Neither     -> the email is printed to the server log (development).
 export async function sendMail(mail: Mail): Promise<void> {
-  const key = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || "Meeting Room <onboarding@resend.dev>";
-  if (!key) {
-    console.log("[email:dev]", JSON.stringify({ from, ...mail }, null, 2));
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailPass = process.env.GMAIL_APP_PASSWORD;
+  const resendKey = process.env.RESEND_API_KEY;
+  const fromName = process.env.EMAIL_FROM_NAME || "Meeting Room";
+
+  if (gmailUser && gmailPass) {
+    const transport = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: { user: gmailUser, pass: gmailPass },
+    });
+    try {
+      await transport.sendMail({
+        from: `"${fromName}" <${gmailUser}>`,
+        to: mail.to,
+        subject: mail.subject,
+        html: mail.html,
+        replyTo: mail.replyTo,
+      });
+    } catch (e) {
+      console.error("[email:gmail:error]", (e as Error).message);
+    }
     return;
   }
-  const resend = new Resend(key);
-  const { error } = await resend.emails.send({
-    from,
-    to: mail.to,
-    subject: mail.subject,
-    html: mail.html,
-    replyTo: mail.replyTo,
-  });
-  if (error) console.error("[email:error]", error);
+
+  if (resendKey) {
+    const from = process.env.EMAIL_FROM || `${fromName} <onboarding@resend.dev>`;
+    const resend = new Resend(resendKey);
+    const { error } = await resend.emails.send({
+      from,
+      to: mail.to,
+      subject: mail.subject,
+      html: mail.html,
+      replyTo: mail.replyTo,
+    });
+    if (error) console.error("[email:resend:error]", error);
+    return;
+  }
+
+  console.log("[email:dev]", JSON.stringify({ to: mail.to, subject: mail.subject, html: mail.html }, null, 2));
 }
 
 // ---- templates ----------------------------------------------------------
