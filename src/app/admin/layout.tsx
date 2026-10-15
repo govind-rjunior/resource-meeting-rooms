@@ -31,9 +31,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/schedule" className="rounded px-2 py-1 text-zinc-600 hover:bg-zinc-100">
               Public view
             </Link>
-            <Link href="/logout" className="rounded px-2 py-1 text-zinc-600 hover:bg-zinc-100">
-              Sign out
-            </Link>
+            <form action="/logout" method="post">
+              <button className="rounded px-2 py-1 text-zinc-600 hover:bg-zinc-100">Sign out</button>
+            </form>
           </span>
         </div>
       </nav>
