@@ -35,6 +35,12 @@ export class BookingError extends Error {
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
+/** An unverified request holds its slot this long; after that it expires and the slot frees. */
+export const PENDING_EMAIL_MINUTES = 45;
+/** Abuse throttles: new (unverified) people per hour across the site, and open requests per email. */
+const MAX_NEW_PEOPLE_PER_HOUR = 30;
+const MAX_OPEN_REQUESTS_PER_PERSON = 5;
+
 // ---------------------------------------------------------------------
 // Slots for a day
 // ---------------------------------------------------------------------
@@ -190,6 +196,13 @@ export async function createRequest(input: BookInput): Promise<{ status: Booking
   }
 
   if (!person) {
+    const { count: recentNew } = await db()
+      .from("people")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "unverified")
+      .gt("created_at", new Date(Date.now() - 3600000).toISOString());
+    if ((recentNew ?? 0) >= MAX_NEW_PEOPLE_PER_HOUR)
+      throw new BookingError("Too many new requests right now. Please try again in an hour or call the front desk.", "throttled", 429);
     const { data: created, error } = await db()
       .from("people")
       .insert({
@@ -217,6 +230,18 @@ export async function createRequest(input: BookInput): Promise<{ status: Booking
       );
     }
   }
+
+  const { count: open } = await db()
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("person_id", person.id)
+    .in("status", ["pending_email", "pending_admin"]);
+  if ((open ?? 0) >= MAX_OPEN_REQUESTS_PER_PERSON)
+    throw new BookingError(
+      `You already have ${open} requests waiting. Wait for the front desk to decide, or cancel one from its email.`,
+      "throttled",
+      429
+    );
 
   const verified = person.status === "verified" || person.status === "active";
   const needsAdmin = settings.approval_required || person.status !== "active" || input.isExternal;
@@ -477,7 +502,7 @@ export async function expireStale(): Promise<{ expired: number }> {
     .from("bookings")
     .select("*")
     .eq("status", "pending_email")
-    .lt("created_at", new Date(Date.now() - 24 * 3600000).toISOString());
+    .lt("created_at", new Date(Date.now() - PENDING_EMAIL_MINUTES * 60000).toISOString());
   const all = [...((rows ?? []) as Booking[]), ...((stale ?? []) as Booking[])];
   for (const b of all) {
     await db().from("bookings").update({ status: "expired", decided_at: now }).eq("id", b.id);
